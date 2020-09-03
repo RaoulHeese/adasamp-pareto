@@ -24,26 +24,24 @@ from scipy.special import erf
 import numpy as np
 import datetime
 import time
-try:
+try: # Ensure minimal package dependency: install pathos to enable parallel computing.
     import dill
     dill._dill._reverse_typemap['ClassType'] = type
     from pathos.multiprocessing import ProcessingPool
     __POOL_AVAILABLE__ = True
 except ModuleNotFoundError:
     __POOL_AVAILABLE__ = False
-try:
+__LOGGING_ENABLED__ = True # Set to False to disable logging and use print instead.
+if __LOGGING_ENABLED__:
     import logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    __LOGGING_AVAILABLE__ = True
-except ModuleNotFoundError:
-    __LOGGING_AVAILABLE__ = False
     
     
 def log_wrapper(verbose, level, msg):
     """Wrapper to savely log messages.
      
-    Use the ``logging`` module if available and use ``print`` otherwise.
+    Use the ``logging`` module if enabled and use ``print`` otherwise.
     
     Parameters
     ----------
@@ -59,10 +57,13 @@ def log_wrapper(verbose, level, msg):
     """
 
     if verbose:
-        if __LOGGING_AVAILABLE__:      
-            logging.log(int(level), str(msg))
-        else:
-            print(str(msg))
+        try:
+            if __LOGGING_ENABLED__:      
+                logging.log(int(level), str(msg))
+            else:
+                print(str(msg))
+        except Exception as e:
+            print(e)
 
 
 class RegressionModel(ABC):
@@ -280,8 +281,8 @@ class AdaptiveSampler():
             polish=True: differential evolution setting
             polish_extratol=.1: differential evolution polishing setting
             polish_maxfun=100: differential evolution polishing setting
-            de_workers=-1: number of workers (-1: all available)
-            polish_workers=-1: number of workers (-1: all available)
+            de_workers=-1: number of workers (-1: use all available)
+            polish_workers=-1: number of workers (-1: use all available)
            
     X_initial_sample_limits : list of tuples or None, optional (default: None)
         Feature space limits for the initial sampling given by a list of 
@@ -316,7 +317,7 @@ class AdaptiveSampler():
         
     verbose : bool, optional (default: False)
         Set to True to print status messages. Use the ``logging`` module if 
-        available.
+        enabled.
         
     save_memory_flag : bool, optional (default: False)
         Set to True to activate the memory saving mode, which switches to a 
@@ -736,7 +737,7 @@ class AdaptiveSampler():
         # Setup
         num_points = Y_mu.shape[0]    
         num_pareto = Y_pareto.shape[0]
-        if workers != 1:
+        if workers != 1 and __POOL_AVAILABLE__:
             pool = ProcessingPool(None if workers == -1 else workers)
             
         # Loop function core

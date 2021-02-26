@@ -3,10 +3,11 @@
 multi-objective optimization problems with binary constraints on the 
 foundation of Bayes optimization.
 
-Algorithm from to the paper "Adaptive Sampling of Pareto Frontiers with Binary 
+Algorithm from the paper "Adaptive Sampling of Pareto Frontiers with Binary 
 Constraints Using Regression and Classification" authored by Raoul Heese and 
 Michael Bortz, Fraunhofer Center for Machine Learning, Fraunhofer Institute 
-for Industrial Mathematics ITWM (2020).
+for Industrial Mathematics ITWM (2020). Preprint available on arXiv:
+https://arxiv.org/abs/2008.12005
 
 Author: Raoul Heese 
 
@@ -14,7 +15,7 @@ Created on Thu Aug 21 12:00:00 2020
 """
 
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 from abc import ABC, abstractmethod
@@ -210,16 +211,16 @@ class AdaptiveSampler():
         needed to completely specify the function. The returned value ``Y`` is 
         an ndarray of shape (n_samples, Y_dim) representing the resulting goal 
         functions and ``f`` is an ndarray of shape (n_samples,) representing 
-        the resulting binary feasibilities. The ``args`` parameter is provided 
-        when starting the adaptive sampling run. 
+        the resulting binary feasibilities. The ``kwargs`` parameter is 
+        provided when starting the adaptive sampling run via ``sample``. 
     
-    X_limits : list of tuples
-        Feature space limits given by a list of tuples of lower and upper 
+    X_limits : list of float tuples (pairs)
+        Feature space limits given by a list of pairs of lower and upper 
         bounds: ``[ (x1min, x1max), (x2min, x2max), ... ]``. This list also 
         specifies the dimensionality ``X_dim = len(X_limits)`` of the feature 
         space.
     
-    Y_ref : list
+    Y_ref : list of float
         Goal space reference point of the form ``[ y1max, y2max, ... ]``. All 
         resulting goal function values must be dominated by the reference 
         point or undesired behaviour might occur. This list also specifies 
@@ -243,7 +244,8 @@ class AdaptiveSampler():
         
     virtual_iterations : int, optional (default: 1)
         Number of virtual adaptive sampling iterations. Specifies the number 
-        of suggested samples per adaptive sampling iteration.
+        of suggested samples per adaptive sampling iteration. Must be at least 
+        1.
     
     initial_sampling_func : str or callable, optional (default: "random")
         Function suggesting the initial sampling points. Can either be a 
@@ -286,7 +288,7 @@ class AdaptiveSampler():
            
     X_initial_sample_limits : list of tuples or None, optional (default: None)
         Feature space limits for the initial sampling given by a list of 
-        tuples of lower and upper bounds in analogy to ``X_limits``. If set to 
+        pairs of lower and upper bounds in analogy to ``X_limits``. If set to 
         None, ``X_limits`` is used instead.
         
     callback_func : callable or None, optional (default: None)
@@ -313,7 +315,7 @@ class AdaptiveSampler():
         
     seed : int or None, optional (default: None)
         Random seed used for all non-deterministic parts of the algorithm. If 
-        set to None, an unspecified seed is used.
+        set to None, an unspecified (pseudo-random) seed is used.
         
     verbose : bool, optional (default: False)
         Set to True to print status messages. Use the ``logging`` module if 
@@ -338,31 +340,30 @@ class AdaptiveSampler():
     """
     
     def __init__(self, simulation_func, X_limits, Y_ref, iterations, Y_model, f_model, initial_samples=0, virtual_iterations=1, initial_sampling_func="random", utility_parameter_options=dict(), decision_parameter_options=dict(), X_initial_sample_limits=None, callback_func=None, stopping_condition_func=None, seed=None, verbose=False, save_memory_flag=False):
-        self._simulation_func = simulation_func
-        self._X_limits = X_limits
-        self._Y_ref = Y_ref
-        self._iterations = int(iterations)
-        self._Y_model = Y_model
-        self._f_model = f_model
-        self._initial_samples = int(initial_samples)
-        self._virtual_iterations = virtual_iterations        
-        self._initial_sampling_func = initial_sampling_func        
-        self._utility_parameter_options = utility_parameter_options
-        self._decision_parameter_options = decision_parameter_options
-        self._X_initial_sample_limits = X_initial_sample_limits if X_initial_sample_limits is not None else X_limits
-        self._callback_func = callback_func
-        self._stopping_condition_func = stopping_condition_func
-        self._seed = seed
-        self._verbose = verbose
-        self._save_memory_flag = save_memory_flag  
-        self._default_utility_parameters = dict(entropy_weight=1, optimization_weight=1, repulsion_weight=1, repulsion_gamma=1, repulsion_distance_func="default", evi_gamma=1, sector_cutoff=1)
-        self._default_decision_parameters = dict(popsize=15, maxiter=1000, tol=.01, atol=.05, polish=True, polish_extratol=.1, polish_maxfun=100, de_workers=-1, polish_workers=-1)
-        self._info = dict()
-        self._opt_func = None
         self._dtype_X = np.float64
         self._dtype_Y = np.float64
         self._dtype_f = np.int64
         self._f_values_dict = {False: int(False), True: int(True)}
+        self._simulation_func = simulation_func
+        self._X_limits = np.asarray(X_limits, dtype=self._dtype_X).tolist()
+        self._Y_ref = np.asarray(Y_ref, dtype=self._dtype_Y).tolist()
+        self._iterations = int(iterations)
+        self._Y_model = Y_model
+        self._f_model = f_model
+        self._initial_samples = int(initial_samples)
+        self._virtual_iterations = int(virtual_iterations)
+        self._initial_sampling_func = initial_sampling_func        
+        self._utility_parameter_options = dict(utility_parameter_options)
+        self._decision_parameter_options = dict(decision_parameter_options)
+        self._X_initial_sample_limits = np.asarray(X_initial_sample_limits, dtype=np.float64).tolist() if X_initial_sample_limits is not None else self._X_limits
+        self._callback_func = callback_func
+        self._stopping_condition_func = stopping_condition_func
+        self._seed = seed
+        self._verbose = bool(verbose)
+        self._save_memory_flag = bool(save_memory_flag)
+        self._default_utility_parameters = dict(entropy_weight=1, optimization_weight=1, repulsion_weight=1, repulsion_gamma=1, repulsion_distance_func="default", evi_gamma=1, sector_cutoff=1)
+        self._default_decision_parameters = dict(popsize=15, maxiter=1000, tol=.01, atol=.05, polish=True, polish_extratol=.1, polish_maxfun=100, de_workers=-1, polish_workers=-1)
+        self._init_properties()
         self._verify_self()
 
     @property
@@ -377,17 +378,38 @@ class AdaptiveSampler():
         
         return self._opt_func
     
-    def _verify_self(self):
-        """Verify the sampler."""
+    def _init_properties(self):
+        """Initialize sampler properties (called in ``__init__``)."""
         
+        self._info = dict()
+        self._opt_func = None
+    
+    
+    def _verify_self(self):
+        """Verify certain sampler attributes (called in ``__init__``)."""
+        
+        if not callable(self._simulation_func):
+            raise ValueError("Verification error: simulation_func is not a callable.")
+        if np.array(self._X_limits).size != len(self._X_limits)*2:
+            raise ValueError("Verification error: invalid X_limits shape.")
         if not isinstance(self._Y_model, RegressionModel):
             raise ValueError("Verification error: Y_model is not a RegressionModel.")
         if not isinstance(self._f_model, ClassificationModel):
             raise ValueError("Verification error: f_model is not a ClassificationModel.")
+        if self._virtual_iterations < 1:
+            raise ValueError("Verification error: virtual_iterations must be 1 or more.")
+        if type(self._initial_sampling_func) is not str and not callable(self._initial_sampling_func):
+            raise ValueError("Verification error: initial_sampling_func of invalid type.")
+        if np.array(self._X_initial_sample_limits).size != len(self._X_initial_sample_limits)*2 or len(self._X_initial_sample_limits) != len(self._X_limits):
+            raise ValueError("Verification error: invalid X_initial_sample_limits shape.")
+        if self._callback_func is not None and not callable(self._callback_func):
+            raise ValueError("Verification error: callback_func of invalid type.")
+        if self._stopping_condition_func is not None and not callable(self._stopping_condition_func):
+            raise ValueError("Verification error: stopping_condition_func of invalid type.")
         if self._seed is not None and type(self._seed) is not int:
             raise ValueError("Verification error: seed of invalid type.")
         if type(self._seed) is int and not (self._seed >= 0 and self._seed < np.iinfo(np.int32).max):
-            raise ValueError("Verification error: seed not in the valid range.")
+            raise ValueError("Verification error: seed not in the valid range [0, {}).".format(np.iinfo(np.int32).max))
 
     def _convert_X(self, X):
         """Convert feature data into a standard format."""
@@ -446,7 +468,7 @@ class AdaptiveSampler():
         return is_efficient
     
     def _create_pareto_grid_cached(self, Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
-        """Create a Pareto gird. Note: Grid functions with best speed but also 
+        """Create a Pareto grid. Note: Grid functions with best speed but also 
         large memory requirements (grid is fully stored in memory)."""
 
         # Build grid and grid mask
@@ -465,7 +487,7 @@ class AdaptiveSampler():
         return Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size
         
     def _create_pareto_grid_runtime(self, Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
-        """Create a Pareto gird. Note: Grid functions with very small memory 
+        """Create a Pareto grid. Note: Grid functions with very small memory 
         requirements (store almost nothing in memory). Is also a bit slower."""
 
         # Build functions
@@ -489,7 +511,7 @@ class AdaptiveSampler():
         return tuple(np.array(idx_nodim) + np.array([1 if k==d else 0 for k in range(Y_dim)])) + (d,)
     
     def _create_pareto_grid(self, creator_func, Y_pareto, Y_ref, Y_dim, cut_ref_violation, scale=True):
-        """Create a non-uniform grid for Parteo volume calculations (Pareto 
+        """Create a non-uniform grid for Pareto volume calculations (Pareto 
         grid). Note: Assume maximization. The resulting grid is asymmetric 
         when ``np.any(Y_ref == Y_pareto)`` due to the exclusion of zero area 
         grid sectors, otherwise it's symmetric."""
@@ -503,7 +525,7 @@ class AdaptiveSampler():
         #
         # Return values:
         # Y_grid_idx_iter_func: () -> iterator. Iterate over all possible idx_nodim = [line1 index, ... linen index]
-        # Y_grid_map_func: (idx) -> float. Extract gird point from index: idx -> Y_grid[idx], where idx = [line1 index, ... linen index, Y index]
+        # Y_grid_map_func: (idx) -> float. Extract grid point from index: idx -> Y_grid[idx], where idx = [line1 index, ... linen index, Y index]
         # Y_grid_dom_func: (idx) -> float. Check if grid point is dominated (=True): idx_nodim -> np.all(Y_grid_mask[idx_nodim]), where idx_nodim = [line1 index, ... linen index]
         # Y_grid_scale: np.array of floats defining the grid axis scales
         # Y_grid_size: size of grid (i.e., number of elements in grid)"""
@@ -512,7 +534,7 @@ class AdaptiveSampler():
         Y_pareto = np.asarray(Y_pareto)
         Y_ref = np.asarray(Y_ref)
         if Y_dim != Y_ref.size or (Y_dim != Y_pareto.shape[1] and Y_pareto.size > 0):
-            raise Exception("Invalid dimensions: Y_dim = {}, Y_ref.shape = {}, Y_pareto.shape = ()!".format(Y_dim, Y_ref.shape, Y_pareto.shape))
+            raise Exception("Invalid dimensions: Y_dim = {}, Y_ref.shape = {}, Y_pareto.shape = {}!".format(Y_dim, Y_ref.shape, Y_pareto.shape))
         if np.any(Y_ref>Y_pareto):
             if cut_ref_violation:
                 for p in range(Y_pareto.shape[0]):
@@ -628,7 +650,7 @@ class AdaptiveSampler():
                     border_distance = np.min(border_distances,axis=1)
                     sector_distances[outlier_idx,d] = border_distance[outlier_idx]
                 #sector_hit_idx = np.all(sector_hit_sigma*Y_sigma > sector_distances, axis=1) # alternative box method
-                Y_sigma[Y_sigma==0] = np.inf # handle division by zero # TODO: verify this approach
+                Y_sigma[Y_sigma==0] = np.inf # handle division by zero; TODO: verify this approach
                 sector_hit_idx = np.linalg.norm(sector_distances/Y_sigma,axis=1,ord=self._Y_dim) < sector_hit_sigma # ellipsoid method
                 if not np.any(sector_hit_idx):
                     return sector_vol # skip sector if no Y_mu+-Y_sigma hits the sector (Note: this introduces an uncertainty)
@@ -852,7 +874,7 @@ class AdaptiveSampler():
         utility = (s * S + o * O + r * R) / (s+o+r)
         return np.array(utility).ravel() # [0,1]
     
-    def _opt_func_provider(self, X, X_virtual, Y, f):
+    def _opt_func_provider(self, X, Y, f, X_virtual, Y_virtual, f_virtual):
         """Provide a utility function for the adaptive sampling decision."""
         
         # Options
@@ -874,13 +896,21 @@ class AdaptiveSampler():
         if X_explored.size > 0:
            X_r_explored_scaled = repulsion_transformation_func(X_explored)
         else:
-           X_r_explored_scaled = np.array([]).reshape(0,self._X_dim)
-        Y_feasible = Y[f!=self._f_values_dict[False]]
+           X_r_explored_scaled = np.array([], dtype=self._dtype_X).reshape(0,self._X_dim)
+        if Y_virtual.size > 0:
+            Y_total = np.concatenate((Y, Y_virtual))
+        else:
+            Y_total = Y
+        if f_virtual.size > 0:
+            f_total = np.concatenate((f, f_virtual))
+        else:
+            f_total = f
+        Y_feasible = Y_total[f_total!=self._f_values_dict[False]]
         if Y_feasible.size > 0:
             Y_pareto = Y_feasible[self._is_pareto_efficient(Y_feasible),:]
             Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size = self._create_pareto_grid(self._grid_creator_func, Y_pareto, self._Y_ref, self._Y_dim, cut_ref_violation=cut_ref_violation, scale=grid_scaling)
         else:
-            Y_pareto = np.array([]).reshape(0,self._Y_dim)
+            Y_pareto = np.array([], dtype=self._dtype_Y).reshape(0,self._Y_dim)
             Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size = None, None, None, None, None # not used
         repulsion_gamma = self._utility_parameters['repulsion_gamma']
         if callable(self._utility_parameters['repulsion_distance_func']):
@@ -897,12 +927,14 @@ class AdaptiveSampler():
             raise ValueError("repulsion distance function unspecified: '{}'".format(self._utility_parameters['repulsion_distance_func']))
            
         # Finish
-        opt_func = lambda X, workers: -self._optutility_func(X, X_r_explored_scaled, Y_pareto, Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size, repulsion_transformation_func, repulsion_distance_func, workers)
+        opt_func = lambda X, workers: -self._optutility_func(X, X_r_explored_scaled, Y_pareto, Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size, repulsion_transformation_func, repulsion_distance_func, workers) # mind the negative sign for minimization
         return opt_func
     
     def _sampling_decision(self, opt_func):
         """Minimize ``opt_func`` to determine a single adaptive sampling 
         suggestion."""
+        
+        # TODO: provide alternative optimization strategies
         
         bounds = [(l, u) for (l, u) in zip([limits[0] for limits in self._X_limits], [limits[1] for limits in self._X_limits])]
         seed = self._rng.randint(0, np.iinfo(np.int32).max)
@@ -946,7 +978,8 @@ class AdaptiveSampler():
             
     def _evaluate_simulation(self, X):
         """Evaluate the goal function and the binary feasibility of one or 
-        more features ``X`` by executing ``_simulation_func``."""    
+        more features ``X`` by executing ``_simulation_func``. Also measure 
+        the required calculation time."""
         
         t = time.time()
         Y, f = self._simulation_func(X, **self._kwargs)
@@ -1004,7 +1037,7 @@ class AdaptiveSampler():
     def _evaluate_callback(self, X, Y, f, iteration):
         """Evalutate the callback function by executing ``_callback_func``. 
         The function is evaluated in each iteration step of the adaptive 
-        sampling run."""
+        sampling run. Also measure the runtime."""
         
         t = time.time()
         if self._callback_func is not None:
@@ -1015,7 +1048,7 @@ class AdaptiveSampler():
     def _evaluate_stopping_condition(self, X, Y, f):
         """Evalutate the stopping criterion by executing 
         ``_stopping_condition_func``. A positive return value prematurely 
-        stops the main adaptive sampling loop."""
+        stops the main adaptive sampling loop. Also measure the runtime."""
         
         t = time.time()
         if self._stopping_condition_func is not None:
@@ -1025,7 +1058,7 @@ class AdaptiveSampler():
         t = time.time() - t
         return stop_flag, t    
 
-    def _initalize_sampling(self, **kwargs):
+    def _initialize_sampling(self, **kwargs):
         """Prepare an adaptive sampling run."""
         
         self._info['start_timestamp'] = datetime.datetime.now().timestamp()
@@ -1081,7 +1114,7 @@ class AdaptiveSampler():
             f_virtual = np.array([], dtype=self._dtype_f).reshape(0)
             self._update_estimator(X, Y, f)
             for virtual_iteration in range(self._virtual_iterations):
-                self._opt_func = self._opt_func_provider(X, X_virtual, Y, f)
+                self._opt_func = self._opt_func_provider(X, Y, f, X_virtual, Y_virtual, f_virtual)
                 X_suggestion = self._convert_X(self._sampling_decision(self._opt_func))
                 X_virtual = np.concatenate((X_virtual, X_suggestion))
                 if virtual_iteration < self._virtual_iterations - 1:
@@ -1122,7 +1155,7 @@ class AdaptiveSampler():
         Parameters
         ----------
         
-        args : tuple, optional
+        kwargs : dict, optional
             Any additional fixed parameters needed to completely specify 
             ``simulation_func``.
             
@@ -1140,7 +1173,7 @@ class AdaptiveSampler():
             simulation.    
         """
         
-        self._initalize_sampling(**kwargs)
+        self._initialize_sampling(**kwargs)
         X, Y, f = self._initial_sampling()
         X, Y, f = self._adaptive_sampling_loop(X, Y, f)
         self._finalize_sampling()

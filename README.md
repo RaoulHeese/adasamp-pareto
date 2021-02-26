@@ -16,3 +16,17 @@ Adaptive optimization algorithm for black-box multi-objective optimization probl
 + NumPy 1.19.1
 + SciPy 1.5.2
 + pathos 0.2.6 (optional, required for parallel computing)
+
+**Reference**
+
+The algorithm is an implementation from our paper "Adaptive Sampling of Pareto Frontiers with Binary Constraints Using Regression and Classification". Preprint available on [arXiv](https://arxiv.org/abs/2008.12005). If you find this code useful in your research, please consider citing:
+
+    @misc{heesebortzCITE2020,
+		title={Adaptive Sampling of Pareto Frontiers with Binary Constraints Using Regression and Classification}, 
+		author={Raoul Heese and Michael Bortz},
+		year={2020},
+		eprint={2008.12005},
+		archivePrefix={arXiv},
+		primaryClass={stat.ML}
+    }
+	

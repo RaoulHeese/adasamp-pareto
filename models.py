@@ -83,7 +83,7 @@ class f_Model_SVM(ClassificationModel):
         super().__init__() 
         self._model = Pipeline([('fscaler', preprocessing.StandardScaler()),
                                 ('fclf', model_selection.GridSearchCV(svm.SVC(kernel=kernel, random_state=random_state, probability=True), 
-                                                                      cv_dict, cv=model_selection.StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state), iid=True))])
+                                                                      cv_dict, cv=model_selection.StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)))])
 
     def fit(self, X, f):
         self._model.fit(X, f)        

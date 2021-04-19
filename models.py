@@ -40,7 +40,7 @@ class AdvancedMultiOutputRegressor(BaseEstimator):
     def predict(self, X, return_std=False):
         check_is_fitted(self, ['_X', '_y'])     
         if not return_std:
-            predictions = self.model_.predict(X)
+            predictions = self._model.predict(X)
         else:
             estimator_predictions = [estimator.predict(X, return_std=True) if self._predict_fun is None else self._predict_fun(estimator, X) for estimator in self._model.estimators_]
             mu = np.stack(list(estimator_predictions[i][0] for i in range(self._y_dim)),axis=1)

@@ -1,15 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Helper classes for adaptive sampling models based on scikit-learn.
-
-See sampling.py for further details.
-
-Author: Raoul Heese 
-
-Created on Thu Aug 21 12:00:00 2020
-"""
+"""Helper classes for simple adaptive sampling models based on scikit-learn."""
 
 
-from sampling import RegressionModel, ClassificationModel
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_is_fitted
@@ -20,9 +12,14 @@ import sklearn.preprocessing as preprocessing
 import sklearn.model_selection as model_selection
 import sklearn.svm as svm
 import sklearn.gaussian_process.kernels as kernels
+from adasamp.models import RegressionModel, ClassificationModel
 
 
 class AdvancedMultiOutputRegressor(BaseEstimator):
+    """Regression model with multiple, independent outputs.
+    
+    For each output, a seperate sklearn-model is realized."""
+    
     def __init__(self, model_constructor, predict_fun=None, **kwargs):
         super().__init__()
         self._model_constructor = model_constructor
@@ -61,11 +58,22 @@ class AdvancedMultiOutputRegressor(BaseEstimator):
     
     
 class MultivariateGPR(AdvancedMultiOutputRegressor):
+    """Gaussian process regressor with multiple, independent outputs.
+    
+    An independent `GaussianProcessRegressor` for each output is realized."""
+    
     def __init__(self, **kwargs):
         super().__init__(GaussianProcessRegressor, None, **kwargs)
         
         
 class Y_Model_GPR(RegressionModel):
+    """Gaussian process regressor with multiple, independent outputs including
+    scaling.
+    
+    Realizes a pipeline: Standardization, independent 
+    `GaussianProcessRegressor` for each output."""
+    
+    
     def __init__(self, kernel = 1.0*kernels.Matern(), n_restarts_optimizer=5, random_state=0):
         super().__init__()
         self._model = Pipeline([('Yscaler', preprocessing.StandardScaler()),
@@ -79,6 +87,11 @@ class Y_Model_GPR(RegressionModel):
         
     
 class f_Model_SVM(ClassificationModel):
+    """Support vector classifier inlcuding scaling.
+    
+    Realizes a pipeline: Standardization, `SVM` with `GridSearchCV` 
+    hyperparameter optimization."""
+    
     def __init__(self, kernel='rbf', cv_dict=dict(C=np.logspace(-1,3,10), gamma=np.logspace(-1,3,10)), n_splits=3, random_state=0):
         super().__init__() 
         self._model = Pipeline([('fscaler', preprocessing.StandardScaler()),

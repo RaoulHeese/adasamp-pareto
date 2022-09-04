@@ -1,24 +1,9 @@
 # -*- coding: utf-8 -*-
 """Adaptive sampling: Adaptive optimization algorithm for black-box 
 multi-objective optimization problems with binary constraints on the 
-foundation of Bayes optimization.
-
-Algorithm from the paper "Adaptive Sampling of Pareto Frontiers with Binary 
-Constraints Using Regression and Classification" authored by Raoul Heese and 
-Michael Bortz, Fraunhofer Center for Machine Learning, Fraunhofer Institute 
-for Industrial Mathematics ITWM (2020). Preprint available on arXiv:
-https://arxiv.org/abs/2008.12005
-
-Author: Raoul Heese 
-
-Created on Thu Aug 21 12:00:00 2020
-"""
+foundation of Bayes optimization."""
 
 
-__version__ = "1.1"
-
-
-from abc import ABC, abstractmethod
 from itertools import product, combinations
 from scipy import optimize
 from scipy.special import erf
@@ -32,169 +17,8 @@ try: # Ensure minimal package dependency: install pathos to enable parallel comp
     __POOL_AVAILABLE__ = True
 except ModuleNotFoundError:
     __POOL_AVAILABLE__ = False
-__LOGGING_ENABLED__ = True # Set to False to disable logging and use print instead.
-if __LOGGING_ENABLED__:
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    
-    
-def log_wrapper(verbose, level, msg):
-    """Wrapper to savely log messages.
-     
-    Use the ``logging`` module if enabled and use ``print`` otherwise.
-    
-    Parameters
-    ----------
-    
-    verbose : bool
-        Set to True to log messages.
-        
-    level : int
-        Logging level for the ``logging`` module.
-    
-    msg : str
-        Actual message to log.
-    """
-
-    if verbose:
-        try:
-            if __LOGGING_ENABLED__:      
-                logging.log(int(level), str(msg))
-            else:
-                print(str(msg))
-        except Exception as e:
-            print(e)
-
-
-class RegressionModel(ABC):
-    """Regression model wrapper.
-    
-    Estimator for the adaptive sampling regression problem of predicting 
-    ``Y`` (goals) from ``X`` (features)."""
-    
-    def __init__(self):
-        pass
-        
-    @abstractmethod
-    def fit(self, X, Y):
-        """Train estimator.
-        
-        Is called at least once before any prediction.
-        
-        Parameters
-        ----------
-        
-        X : ndarray of shape (n_samples, X_dim)
-            Array of features (estimator inputs).
-            
-        Y : ndarray of shape (n_samples, Y_dim)
-            Array of regression values (estimator targets).
-        """
-        
-        raise NotImplementedError            
-        
-    @abstractmethod
-    def predict(self, X, return_std):
-        """Estimator prediction.
-         
-        It is assumed that the predictive distribution is a Gaussian specified 
-        by a mean and a standard deviation.
-        
-        Parameters
-        ----------
-        
-        X : ndarray of shape (n_query_points, X_dim)
-            Query points where the estimator is evaluated.
-        
-        return_std : bool
-            If set to True, return both the means and the standard deviations.
-            If set to False, only return the means.
-            
-        Returns
-        -------
-        
-        Y_mu : ndarray of shape (n_query_points, Y_dim)
-            Mean of the predictive distribution at the query points.
-            
-        Y_sigma : ndarray of shape (n_query_points, Y_dim)
-           Standard deviation of the predictive distribution at the query 
-           points. Covariances are not returned.
-        """
-        
-        raise NotImplementedError  
-        
-        
-class ClassificationModel(ABC):
-    """Classification model wrapper.
-    
-    Estimator for the adaptive sampling classification problem of predicting 
-    ``f`` (binary feasibilities) from ``X`` (features)."""
-    
-    def __init__(self):
-        pass
-        
-    @abstractmethod
-    def fit(self, X, f):
-        """Train estimator.
-        
-        Is called at least once before any prediction. The class labels can be 
-        either True or False and are automatically converted to integers 
-        before the training.
-        
-        Parameters
-        ----------
-        
-        X : ndarray of shape (n_samples, X_dim)
-            Array of features (estimator inputs).
-            
-        f : ndarray of shape (n_samples,)
-            Array of binary classification labels (estimator targets).
-        """
-        
-        raise NotImplementedError            
-        
-    @abstractmethod
-    def predict(self, X):
-        """Classifier prediction.
-        
-        Parameters
-        ----------
-        
-        X : ndarray of shape (n_query_points, X_dim)
-            Query points where the estimator is evaluated.
-            
-        Returns
-        -------
-        
-        f : ndarray of shape (n_query_points,)
-            Predicted labels at the query points.
-        """
-        
-        raise NotImplementedError   
-
-    @abstractmethod
-    def predict_true_proba(self, X):
-        """Classifier probability prediction.
-        
-        Returns the predicted probability of a True label at the respective 
-        query points.
-        
-        Parameters
-        ----------
-        
-        X : ndarray of shape (n_query_points, X_dim)
-            Query points where the estimator is evaluated.
-            
-        Returns
-        -------
-        
-        p : ndarray of shape (n_query_points,)
-            Predicted probability for a True label at the query points. It is 
-            assumed that ``0 <= p <= 1``.
-        """
-
-        raise NotImplementedError   
+from adasamp.util import log_wrapper
+from adasamp.models import RegressionModel, ClassificationModel
 
 
 class AdaptiveSampler():
@@ -261,30 +85,29 @@ class AdaptiveSampler():
         Set parameters specifying the utility function. If not set, default 
         values are used. The following parameters are available (=default 
         values):
-            entropy_weight=1: entropic weight
-            optimization_weight=1: optimality weight
-            repulsion_weight=1: repulsion weight
-            repulsion_gamma=1: repulsion coefficient
-            repulsion_distance_func="default": distance function (either 
-                "default" or a callable of the form
-                ``repulsion_distance_func(x, y)`` returning the scalar 
-                distance of two points ``x`` and ``y``.)
-            evi_gamma = 1: Pareto volume parameter
-            sector_cutoff = 1: Pareto volume cutoff
+            
+        - entropy_weight=1: entropic weight 
+        - optimization_weight=1: optimality weight
+        - repulsion_weight=1: repulsion weight
+        - repulsion_gamma=1: repulsion coefficient
+        - repulsion_distance_func="default": distance function (either "default" or a callable of the form ``repulsion_distance_func(x, y)`` returning the scalar distance of two points ``x`` and ``y``.)
+        - evi_gamma = 1: Pareto volume parameter
+        - sector_cutoff = 1: Pareto volume cutoff
         
     decision_parameter_options : dict, optional (default: {})
         Set decision specifying the utility function. If not set, default 
         values are used. The following parameters are available (=default 
         values):
-            popsize=15: differential evolution setting
-            maxiter=1000: differential evolution setting
-            tol=.01: differential evolution setting
-            atol=.05: differential evolution setting
-            polish=True: differential evolution setting
-            polish_extratol=.1: differential evolution polishing setting
-            polish_maxfun=100: differential evolution polishing setting
-            de_workers=-1: number of workers (-1: use all available)
-            polish_workers=-1: number of workers (-1: use all available)
+        
+        - popsize=15: differential evolution setting
+        - maxiter=1000: differential evolution setting
+        - tol=.01: differential evolution setting
+        - atol=.05: differential evolution setting
+        - polish=True: differential evolution setting
+        - polish_extratol=.1: differential evolution polishing setting
+        - polish_maxfun=100: differential evolution polishing setting
+        - de_workers=-1: number of workers (-1: use all available)
+        - polish_workers=-1: number of workers (-1: use all available)
            
     X_initial_sample_limits : list of tuples or None, optional (default: None)
         Feature space limits for the initial sampling given by a list of 
@@ -325,18 +148,6 @@ class AdaptiveSampler():
         Set to True to activate the memory saving mode, which switches to a 
         memory efficient Pareto volume calculation at the cost of a possibly 
         longer runtime.
-        
-    Properties
-    ----------
-    
-    info : dict
-        Current sampling information (statistics etc.) in form of a dictionary.
-        
-    opt_func : None or callable
-        Current optimization function of the form ``opt_func(X, workers)``, 
-        where ``X`` is an ndarray of shape (1, X_dim) corresponding to a 
-        single sampling point. The property defaults to None if the 
-        optimization function has not yet been specified.
     """
     
     def __init__(self, simulation_func, X_limits, Y_ref, iterations, Y_model, f_model, initial_samples=0, virtual_iterations=1, initial_sampling_func="random", utility_parameter_options=dict(), decision_parameter_options=dict(), X_initial_sample_limits=None, callback_func=None, stopping_condition_func=None, seed=None, verbose=False, save_memory_flag=False):
@@ -368,13 +179,18 @@ class AdaptiveSampler():
 
     @property
     def info(self):
-        """Current sampling information."""    
+        """Current sampling information (statistics etc.) in form of a
+        dictionary."""
         
         return self._info
     
     @property
     def opt_func(self):
-        """Current optimization function."""    
+        """Current optimization function of the form ``opt_func(X, workers)``, 
+        where ``X`` is an ndarray of shape (1, X_dim) corresponding to a 
+        single sampling point. The property defaults to None if the 
+        optimization function has not yet been specified (i.e., None or 
+        callable)."""    
         
         return self._opt_func
     
@@ -1155,7 +971,7 @@ class AdaptiveSampler():
         Parameters
         ----------
         
-        kwargs : dict, optional
+        **kwargs : dict, optional
             Any additional fixed parameters needed to completely specify 
             ``simulation_func``.
             

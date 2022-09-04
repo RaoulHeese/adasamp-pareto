@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Helper classes for the adaptive sampling demo.
-
-See sampling.py for further details.
-
-Author: Raoul Heese 
-
-Created on Thu Aug 21 12:00:00 2020
-"""
+"""Helper classes for adaptive sampling demos."""
 
 
 import numpy as np

@@ -1,0 +1,5 @@
+numpy==1.19.1
+scipy==1.5.2
+pathos==0.2.6
+dill
+matplotlib

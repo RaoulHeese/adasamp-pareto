@@ -36,7 +36,8 @@ class AdaptiveSampler():
         an ndarray of shape (n_samples, Y_dim) representing the resulting goal 
         functions and ``f`` is an ndarray of shape (n_samples,) representing 
         the resulting binary feasibilities. The ``kwargs`` parameter is 
-        provided when starting the adaptive sampling run via ``sample``. 
+        provided when starting the adaptive sampling run via ``sample``. The
+        adaptive sampling run aims to maximize Y s.t. f == True.
     
     X_limits : list of float tuples (pairs)
         Feature space limits given by a list of pairs of lower and upper 
@@ -45,10 +46,11 @@ class AdaptiveSampler():
         space.
     
     Y_ref : list of float
-        Goal space reference point of the form ``[ y1max, y2max, ... ]``. All 
+        Goal space reference point of the form ``[ y1min, y2min, ... ]``. All 
         resulting goal function values must be dominated by the reference 
-        point or undesired behaviour might occur. This list also specifies 
-        the dimensionality ``Y_dim = len(Y_ref)`` of the goal space.
+        point (w.r.t. maximization) or undesired behaviour might occur. This 
+        list also specifies the dimensionality ``Y_dim = len(Y_ref)`` of the 
+        goal space. 
         
     iterations : int
         Number of adaptive sampling iterations.
@@ -150,7 +152,11 @@ class AdaptiveSampler():
         longer runtime.
     """
     
-    def __init__(self, simulation_func, X_limits, Y_ref, iterations, Y_model, f_model, initial_samples=0, virtual_iterations=1, initial_sampling_func="random", utility_parameter_options=dict(), decision_parameter_options=dict(), X_initial_sample_limits=None, callback_func=None, stopping_condition_func=None, seed=None, verbose=False, save_memory_flag=False):
+    def __init__(self, simulation_func, X_limits, Y_ref, iterations, Y_model, f_model,
+                 initial_samples=0, virtual_iterations=1, initial_sampling_func="random", 
+                 utility_parameter_options=dict(), decision_parameter_options=dict(), 
+                 X_initial_sample_limits=None, callback_func=None, 
+                 stopping_condition_func=None, seed=None, verbose=False, save_memory_flag=False):
         self._dtype_X = np.float64
         self._dtype_Y = np.float64
         self._dtype_f = np.int64
@@ -194,78 +200,41 @@ class AdaptiveSampler():
         
         return self._opt_func
     
-    def _init_properties(self):
-        """Initialize sampler properties (called in ``__init__``)."""
-        
-        self._info = dict()
-        self._opt_func = None
-    
-    
-    def _verify_self(self):
-        """Verify certain sampler attributes (called in ``__init__``)."""
-        
-        if not callable(self._simulation_func):
-            raise ValueError("Verification error: simulation_func is not a callable.")
-        if np.array(self._X_limits).size != len(self._X_limits)*2:
-            raise ValueError("Verification error: invalid X_limits shape.")
-        if not isinstance(self._Y_model, RegressionModel):
-            raise ValueError("Verification error: Y_model is not a RegressionModel.")
-        if not isinstance(self._f_model, ClassificationModel):
-            raise ValueError("Verification error: f_model is not a ClassificationModel.")
-        if self._virtual_iterations < 1:
-            raise ValueError("Verification error: virtual_iterations must be 1 or more.")
-        if type(self._initial_sampling_func) is not str and not callable(self._initial_sampling_func):
-            raise ValueError("Verification error: initial_sampling_func of invalid type.")
-        if np.array(self._X_initial_sample_limits).size != len(self._X_initial_sample_limits)*2 or len(self._X_initial_sample_limits) != len(self._X_limits):
-            raise ValueError("Verification error: invalid X_initial_sample_limits shape.")
-        if self._callback_func is not None and not callable(self._callback_func):
-            raise ValueError("Verification error: callback_func of invalid type.")
-        if self._stopping_condition_func is not None and not callable(self._stopping_condition_func):
-            raise ValueError("Verification error: stopping_condition_func of invalid type.")
-        if self._seed is not None and type(self._seed) is not int:
-            raise ValueError("Verification error: seed of invalid type.")
-        if type(self._seed) is int and not (self._seed >= 0 and self._seed < np.iinfo(np.int32).max):
-            raise ValueError("Verification error: seed not in the valid range [0, {}).".format(np.iinfo(np.int32).max))
+    @staticmethod
+    def _create_pareto_grid_cached(Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
+        """Create a Pareto grid. Note: Grid functions with best speed but also 
+        large memory requirements (grid is fully stored in memory)."""
 
-    def _convert_X(self, X):
-        """Convert feature data into a standard format."""
-                
-        return np.asarray(X, dtype=self._dtype_X).reshape(-1, self._X_dim)
+        # Build grid and grid mask
+        grid = np.array(list(product(*Y_grid_lines)), dtype=np.float64) # contains actual grid points
+        grid_mask = np.full(grid.shape, False, dtype=bool) # grid point domination: true, when dominated
+        grid_mask[np.logical_or.reduce([np.all(grid<Y_pareto[idx,:],axis=1) for idx in range(Y_pareto.shape[0])])] = True
+        Y_grid = grid.reshape(*[len(Y_grid_lines[d]) for d in range(Y_dim)],Y_dim)
+        Y_grid_mask = grid_mask.reshape(*[len(Y_grid_lines[d]) for d in range(Y_dim)],Y_dim)
+        Y_grid_size = np.prod([len(line) for line in Y_grid_lines])
     
-    def _convert_Y(self, Y):
-        """Convert goal data into a standard format."""
+        # Build functions    
+        grid_lens_iterator_list = [range(d-1) for d in Y_grid.shape[:-1]]
+        Y_grid_idx_iter_func = lambda: product(*grid_lens_iterator_list)
+        Y_grid_map_func = lambda idx: Y_grid[idx]
+        Y_grid_dom_func = lambda idx_nodim: np.all(Y_grid_mask[idx_nodim])
+        return Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size
         
-        return np.asarray(Y, dtype=self._dtype_Y).reshape(-1, self._Y_dim)
+    @staticmethod
+    def _create_pareto_grid_runtime(Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
+        """Create a Pareto grid. Note: Grid functions with very small memory 
+        requirements (store almost nothing in memory). Is also a bit slower."""
 
-    def _convert_f(self, f):
-        """Convert feasibility data into a standard format."""
-        
-        return np.asarray(np.vectorize(self._f_values_dict.get)(f.astype(bool)), dtype=self._dtype_f).ravel()
+        # Build functions
+        line_lens_iterator_list = [range(len(line)-1) for line in Y_grid_lines]
+        Y_grid_idx_iter_func = lambda: product(*line_lens_iterator_list)
+        Y_grid_map_func = lambda idx: Y_grid_lines[idx[-1]][idx[:-1][idx[-1]]]
+        Y_grid_dom_func = lambda idx_nodim: np.logical_or.reduce([np.all(np.array([Y_grid_map_func(list(idx_nodim)+[d]) for d in range(Y_dim)]).reshape(1,-1)<Y_pareto[idx,:],axis=1) for idx in range(Y_pareto.shape[0])])[0] # [0] avoids nesting
+        Y_grid_size = np.prod([len(line) for line in Y_grid_lines])
+        return Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size
     
-    def initial_sampling_random_uniform(self, initial_samples, X_initial_sample_limits, seed):   
-        """Create a random initial design of experiments within the given 
-        limits of the feature space."""
-        
-        rng = np.random.RandomState(seed)
-        X_init = np.concatenate([rng.uniform(limits[0], limits[1], initial_samples).reshape(initial_samples,1) for limits in X_initial_sample_limits], axis=1)
-        return X_init.reshape(-1,self._X_dim)
-
-    def initial_sampling_factorial(self, initial_samples, X_initial_sample_limits, seed):       
-        """Create an initial factorial design of experiments. If no full 
-        factorial design is possible, a random subsampling is used."""
-        
-        X_init = []
-        suggestions_per_dimension = int((np.ceil(initial_samples**(1/self._X_dim))))
-        for x in product(*[np.linspace(limits[0], limits[1], suggestions_per_dimension) for limits in X_initial_sample_limits]):
-            X_init.append(x)
-        X_init = np.asarray(X_init).reshape(-1,self._X_dim)    
-        if X_init.shape[0] > initial_samples:
-            rng = np.random.RandomState(seed)
-            rng.shuffle(X_init)
-            X_init = X_init[:initial_samples,:]
-        return X_init
-    
-    def _is_pareto_efficient(self, costs, exclude_duplicates=True):
+    @staticmethod
+    def _is_pareto_efficient(costs, exclude_duplicates=True):
         """Determine Pareto-efficient indices of a cost vector. Note: Assume 
         maximization. Exclude duplicates by default."""
 
@@ -283,50 +252,22 @@ class AdaptiveSampler():
             next_point_index = np.sum(nondominated_point_mask[:next_point_index])+1
         return is_efficient
     
-    def _create_pareto_grid_cached(self, Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
-        """Create a Pareto grid. Note: Grid functions with best speed but also 
-        large memory requirements (grid is fully stored in memory)."""
-
-        # Build grid and grid mask
-        grid = np.array(list(product(*Y_grid_lines)), dtype=np.float64) # contains actual grid points
-        grid_mask = np.full(grid.shape, False, dtype=np.bool) # grid point domination: true, when dominated
-        grid_mask[np.logical_or.reduce([np.all(grid<Y_pareto[idx,:],axis=1) for idx in range(Y_pareto.shape[0])])] = True
-        Y_grid = grid.reshape(*[len(Y_grid_lines[d]) for d in range(Y_dim)],Y_dim)
-        Y_grid_mask = grid_mask.reshape(*[len(Y_grid_lines[d]) for d in range(Y_dim)],Y_dim)
-        Y_grid_size = np.prod([len(line) for line in Y_grid_lines])
-    
-        # Build functions    
-        grid_lens_iterator_list = [range(d-1) for d in Y_grid.shape[:-1]]
-        Y_grid_idx_iter_func = lambda: product(*grid_lens_iterator_list)
-        Y_grid_map_func = lambda idx: Y_grid[idx]
-        Y_grid_dom_func = lambda idx_nodim: np.all(Y_grid_mask[idx_nodim])
-        return Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size
-        
-    def _create_pareto_grid_runtime(self, Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim):
-        """Create a Pareto grid. Note: Grid functions with very small memory 
-        requirements (store almost nothing in memory). Is also a bit slower."""
-
-        # Build functions
-        line_lens_iterator_list = [range(len(line)-1) for line in Y_grid_lines]
-        Y_grid_idx_iter_func = lambda: product(*line_lens_iterator_list)
-        Y_grid_map_func = lambda idx: Y_grid_lines[idx[-1]][idx[:-1][idx[-1]]]
-        Y_grid_dom_func = lambda idx_nodim: np.logical_or.reduce([np.all(np.array([Y_grid_map_func(list(idx_nodim)+[d]) for d in range(Y_dim)]).reshape(1,-1)<Y_pareto[idx,:],axis=1) for idx in range(Y_pareto.shape[0])])
-        Y_grid_size = np.prod([len(line) for line in Y_grid_lines])
-        return Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size
-    
-    def _pareto_grid_map_idx_nodim_to_start_idx(self, idx_nodim, d):
+    @staticmethod
+    def _pareto_grid_map_idx_nodim_to_start_idx(idx_nodim, d):
         """Helper functions to map indices for a Pareto grid. Map to the start 
         index."""
         
         return tuple(idx for idx in idx_nodim) + (d,)
     
-    def _pareto_grid_map_idx_nodim_to_stop_idx(self, Y_dim, idx_nodim, d):
+    @staticmethod
+    def _pareto_grid_map_idx_nodim_to_stop_idx(Y_dim, idx_nodim, d):
         """Helper functions to map indices for a Pareto grid. Map to the stop 
         index."""
                
         return tuple(np.array(idx_nodim) + np.array([1 if k==d else 0 for k in range(Y_dim)])) + (d,)
     
-    def _create_pareto_grid(self, creator_func, Y_pareto, Y_ref, Y_dim, cut_ref_violation, scale=True):
+    @staticmethod
+    def _create_pareto_grid(creator_func, Y_pareto, Y_ref, Y_dim, cut_ref_violation, scale=True):
         """Create a non-uniform grid for Pareto volume calculations (Pareto 
         grid). Note: Assume maximization. The resulting grid is asymmetric 
         when ``np.any(Y_ref == Y_pareto)`` due to the exclusion of zero area 
@@ -403,6 +344,76 @@ class AdaptiveSampler():
             return creator_func(Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim)
         else:
             return Y_grid_lines, Y_grid_scale, Y_pareto, Y_ref, Y_dim
+    
+    def _init_properties(self):
+        """Initialize sampler properties (called in ``__init__``)."""
+        
+        self._info = dict()
+        self._opt_func = None
+    
+    def _verify_self(self):
+        """Verify certain sampler attributes (called in ``__init__``)."""
+        
+        if not callable(self._simulation_func):
+            raise ValueError("Verification error: simulation_func is not a callable.")
+        if np.array(self._X_limits).size != len(self._X_limits)*2:
+            raise ValueError("Verification error: invalid X_limits shape.")
+        if not isinstance(self._Y_model, RegressionModel):
+            raise ValueError("Verification error: Y_model is not a RegressionModel.")
+        if not isinstance(self._f_model, ClassificationModel):
+            raise ValueError("Verification error: f_model is not a ClassificationModel.")
+        if self._virtual_iterations < 1:
+            raise ValueError("Verification error: virtual_iterations must be 1 or more.")
+        if type(self._initial_sampling_func) is not str and not callable(self._initial_sampling_func):
+            raise ValueError("Verification error: initial_sampling_func of invalid type.")
+        if np.array(self._X_initial_sample_limits).size != len(self._X_initial_sample_limits)*2 or len(self._X_initial_sample_limits) != len(self._X_limits):
+            raise ValueError("Verification error: invalid X_initial_sample_limits shape.")
+        if self._callback_func is not None and not callable(self._callback_func):
+            raise ValueError("Verification error: callback_func of invalid type.")
+        if self._stopping_condition_func is not None and not callable(self._stopping_condition_func):
+            raise ValueError("Verification error: stopping_condition_func of invalid type.")
+        if self._seed is not None and type(self._seed) is not int:
+            raise ValueError("Verification error: seed of invalid type.")
+        if type(self._seed) is int and not (self._seed >= 0 and self._seed < np.iinfo(np.int32).max):
+            raise ValueError("Verification error: seed not in the valid range [0, {}).".format(np.iinfo(np.int32).max))
+
+    def _convert_X(self, X):
+        """Convert feature data into a standard format."""
+                
+        return np.asarray(X, dtype=self._dtype_X).reshape(-1, self._X_dim)
+    
+    def _convert_Y(self, Y):
+        """Convert goal data into a standard format."""
+        
+        return np.asarray(Y, dtype=self._dtype_Y).reshape(-1, self._Y_dim)
+
+    def _convert_f(self, f):
+        """Convert feasibility data into a standard format."""
+        
+        return np.asarray(np.vectorize(self._f_values_dict.get)(f.astype(bool)), dtype=self._dtype_f).ravel()
+    
+    def initial_sampling_random_uniform(self, initial_samples, X_initial_sample_limits, seed):   
+        """Create a random initial design of experiments within the given 
+        limits of the feature space."""
+        
+        rng = np.random.RandomState(seed)
+        X_init = np.concatenate([rng.uniform(limits[0], limits[1], initial_samples).reshape(initial_samples,1) for limits in X_initial_sample_limits], axis=1)
+        return X_init.reshape(-1,self._X_dim)
+
+    def initial_sampling_factorial(self, initial_samples, X_initial_sample_limits, seed):       
+        """Create an initial factorial design of experiments. If no full 
+        factorial design is possible, a random subsampling is used."""
+        
+        X_init = []
+        suggestions_per_dimension = int((np.ceil(initial_samples**(1/self._X_dim))))
+        for x in product(*[np.linspace(limits[0], limits[1], suggestions_per_dimension) for limits in X_initial_sample_limits]):
+            X_init.append(x)
+        X_init = np.asarray(X_init).reshape(-1,self._X_dim)    
+        if X_init.shape[0] > initial_samples:
+            rng = np.random.RandomState(seed)
+            rng.shuffle(X_init)
+            X_init = X_init[:initial_samples,:]
+        return X_init
        
     def _expected_non_dominated_volume_improvement(self, Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size, Y_mu, Y_sigma, allow_outliers=True, workers=1):
         """Calculate the expected improvement of the non-dominated Pareto 
@@ -452,8 +463,8 @@ class AdaptiveSampler():
             a_sector = []
             b_sector = []
             for d in range(self._Y_dim):
-                idx_array_start = self._pareto_grid_map_idx_nodim_to_start_idx(sector_idx_array_nodim, d)
-                idx_array_stop = self._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, sector_idx_array_nodim, d)
+                idx_array_start = AdaptiveSampler._pareto_grid_map_idx_nodim_to_start_idx(sector_idx_array_nodim, d)
+                idx_array_stop = AdaptiveSampler._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, sector_idx_array_nodim, d)
                 a_sector.append(Y_grid_map_func(idx_array_start))
                 b_sector.append(Y_grid_map_func(idx_array_stop))  
             
@@ -484,12 +495,12 @@ class AdaptiveSampler():
                     continue # subsector is either dominated or not a subsector in the first place
                 active_sector_vol = np.ones(num_points,dtype=np.float64)
                 for d in range(self._Y_dim):
-                    idx_array_start = self._pareto_grid_map_idx_nodim_to_start_idx(sub_sector_idx_array_nodim, d)
+                    idx_array_start = AdaptiveSampler._pareto_grid_map_idx_nodim_to_start_idx(sub_sector_idx_array_nodim, d)
                     a = Y_grid_map_func(idx_array_start)
                     if sub_sector_idx_array_nodim[d] == sector_idx_array_nodim[d]:
                         pv = gaussian_integral_linear(Y_mu[:,d], Y_sigma[:,d], a_sector[d], b_sector[d], a)
                     else: 
-                        idx_array_stop = self._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, sub_sector_idx_array_nodim, d)
+                        idx_array_stop = AdaptiveSampler._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, sub_sector_idx_array_nodim, d)
                         b = Y_grid_map_func(idx_array_stop)                    
                         pv = (b - a) * gaussian_integral_const(Y_mu[:,d], Y_sigma[:,d], a_sector[d], b_sector[d])
                     active_sector_vol *= pv
@@ -526,8 +537,8 @@ class AdaptiveSampler():
             if Y_grid_dom_func(idx_array_nodim): # sector only contributes if it is dominated
                 sector_dominated_volume = 1
                 for d in range(self._Y_dim):
-                    idx_array_start = self._pareto_grid_map_idx_nodim_to_start_idx(idx_array_nodim, d)
-                    idx_array_stop = self._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, idx_array_nodim, d)
+                    idx_array_start = AdaptiveSampler._pareto_grid_map_idx_nodim_to_start_idx(idx_array_nodim, d)
+                    idx_array_stop = AdaptiveSampler._pareto_grid_map_idx_nodim_to_stop_idx(self._Y_dim, idx_array_nodim, d)
                     a = Y_grid_map_func(idx_array_start)
                     b = Y_grid_map_func(idx_array_stop)
                     sector_dominated_volume *= (b-a)
@@ -723,8 +734,8 @@ class AdaptiveSampler():
             f_total = f
         Y_feasible = Y_total[f_total!=self._f_values_dict[False]]
         if Y_feasible.size > 0:
-            Y_pareto = Y_feasible[self._is_pareto_efficient(Y_feasible),:]
-            Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size = self._create_pareto_grid(self._grid_creator_func, Y_pareto, self._Y_ref, self._Y_dim, cut_ref_violation=cut_ref_violation, scale=grid_scaling)
+            Y_pareto = Y_feasible[AdaptiveSampler._is_pareto_efficient(Y_feasible),:]
+            Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size = AdaptiveSampler._create_pareto_grid(self._grid_creator_func, Y_pareto, self._Y_ref, self._Y_dim, cut_ref_violation=cut_ref_violation, scale=grid_scaling)
         else:
             Y_pareto = np.array([], dtype=self._dtype_Y).reshape(0,self._Y_dim)
             Y_grid_idx_iter_func, Y_grid_map_func, Y_grid_dom_func, Y_grid_scale, Y_grid_size = None, None, None, None, None # not used
@@ -888,9 +899,9 @@ class AdaptiveSampler():
         self._Y_model_is_ready = False
         self._f_model_is_ready = False
         if self._save_memory_flag:
-            self._grid_creator_func = self._create_pareto_grid_runtime
+            self._grid_creator_func = AdaptiveSampler._create_pareto_grid_runtime
         else:
-            self._grid_creator_func = self._create_pareto_grid_cached
+            self._grid_creator_func = AdaptiveSampler._create_pareto_grid_cached
         self._utility_parameters = self._default_utility_parameters.copy()
         self._utility_parameters.update(**self._utility_parameter_options)
         self._decision_parameters = self._default_decision_parameters.copy()

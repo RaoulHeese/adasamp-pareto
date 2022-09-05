@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 
 
 def circle_simulator_func(X, power=2):
+    """Problem function. Returns goals Y (2-dimensional) and feasibility f for 
+    a maximization problem: ``max Y s.t. f==True.``"""
+    
     circle_centers = [[1,0], [0,1]]
     circle_radii = [.5,.5]
     num_points = X.shape[0]
@@ -28,15 +31,20 @@ def circle_simulator_func(X, power=2):
 
 
 def circle_pareto_func(N):
+    """Problem function solution. Returns N Pareto-optimal X samples."""
+    
     return np.concatenate((np.concatenate((np.linspace(0, .5, N).reshape(N,1),np.linspace(1, 1.5, N).reshape(N,1))),np.concatenate((np.array(np.sqrt(.25-(np.linspace(0, .5, N).reshape(N,1)-0)**2)+1).reshape(N,1),np.array(np.sqrt(.25-(np.linspace(1, 1.5, N).reshape(N,1)-1)**2)+0).reshape(N,1)))), axis=1)
     
 
 def circle_callback_func(sampler, X, Y, f, iteration):
+    """Callback function. Called in each adaptive sampling iteration."""
+    
     # options
     grid_resolution = 20
     figsize = (10, 10)
     show_true_pareto = True
     show_path = True
+    show_annotations = True
     workers = 1
     
     # plot
@@ -59,10 +67,18 @@ def circle_callback_func(sampler, X, Y, f, iteration):
     if show_true_pareto:
         X_true_pareto = circle_pareto_func(N=512)
         plt.scatter(X_true_pareto[:,0], X_true_pareto[:,1], c='c', s=15) 
+        if show_annotations and iteration is None:
+            plt.gca().annotate('true pareto', xy=(X_true_pareto[0,0], X_true_pareto[0,1]),  xycoords='data', xytext=(0.8, 0.95), textcoords='axes fraction', arrowprops=dict(facecolor='c', shrink=0.05))
     plt.scatter(X[f==0,0], X[f==0,1], c='r')
-    plt.scatter(X[f==1,0], X[f==1,1], c='g')  
+    if show_annotations and iteration is None:
+        plt.gca().annotate('infeasible sample', xy=(X[f==0,0][0], X[f==0,1][0]),  xycoords='data', xytext=(0.8, 0.85), textcoords='axes fraction', arrowprops=dict(facecolor='r', shrink=0.05))
+    plt.scatter(X[f==1,0], X[f==1,1], c='g')
+    if show_annotations and iteration is None:
+        plt.gca().annotate('feasibe sample', xy=(X[f==1,0][0], X[f==1,1][0]),  xycoords='data', xytext=(0.8, 0.75), textcoords='axes fraction', arrowprops=dict(facecolor='g', shrink=0.05))
     X_pareto = X[f==1,:][sampler._is_pareto_efficient(Y[f==1,:]),:]
     plt.scatter(X_pareto[:,0], X_pareto[:,1], c='b')
+    if show_annotations and iteration is None:
+        plt.gca().annotate('Pareto optimal sample', xy=(X_pareto[0,0], X_pareto[0,1]),  xycoords='data', xytext=(0.8, 0.65), textcoords='axes fraction', arrowprops=dict(facecolor='b', shrink=0.05))
     plt.scatter(X[:sampler._initial_samples,0], X[:sampler._initial_samples,1], facecolor='none', edgecolor='k', s=110)
     if iteration is not None:
         plt.scatter(X[-sampler._virtual_iterations:,0], X[-sampler._virtual_iterations:,1], facecolor='none', edgecolor='c', marker='s', s=110)

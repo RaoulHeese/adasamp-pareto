@@ -18,10 +18,12 @@ Adaptive optimization algorithm for black-box multi-objective optimization probl
 
 .. math::
 
-   \operatorname{max} \mathbf{y}(\mathbf{x}) \hspace{2cm} \\
-   \operatorname{s.t.} f(\mathbf{x}) = \text{feasible}
+   max [ y(x) ]
    
-in an iterative procedure. Here, :math:`\mathbf{y}(\mathbf{x})` denotes the multi-dimensional goals and :math:`f(\mathbf{x})` the binary feasibility of the problem (in the sense that certain design variables :math:`\mathbf{x}` lead to invalid goals). All technical details can be found in the paper "Adaptive Sampling of Pareto Frontiers with Binary Constraints Using Regression and Classification" (`<https://arxiv.org/abs/2008.12005>`_).
+.. math::
+   s.t. f(x) = feasible
+   
+in an iterative procedure. Here, :math:`y(x)` denotes the multi-dimensional goals and :math:`f(x)` the binary feasibility of the problem (in the sense that certain design variables :math:`x` lead to invalid goals). All technical details can be found in the paper "Adaptive Sampling of Pareto Frontiers with Binary Constraints Using Regression and Classification" (`<https://arxiv.org/abs/2008.12005>`_).
 
 **Installation**
 

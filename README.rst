@@ -28,7 +28,7 @@ Install via ``pip`` or clone this repository. In order to use ``pip``, type:
 
 .. code-block:: sh
 
-    $ pip install adasamp
+    $ pip install adasamp-pareto
 	
 **Usage**
 

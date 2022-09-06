@@ -1,6 +1,5 @@
 numpy
 scipy
 scikit-learn
-pathos
 dill
 matplotlib

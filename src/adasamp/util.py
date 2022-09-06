@@ -11,9 +11,9 @@ if __LOGGING_ENABLED__:
     
 
 def log_wrapper(verbose, level, msg):
-    """Wrapper to savely log messages.
+    """Wrapper to safely log messages.
      
-    Use the ``logging`` module if enabled and use ``print`` otherwise.
+    Use the ``logging`` module if enabled and use ``print`` to std otherwise.
     
     Parameters
     ----------

@@ -1,6 +1,6 @@
-***********************************************************************
-adasamp-pareto: adaptive bayes-sampling for multi-criteria optimization
-***********************************************************************
+************************************************************************
+Adaptive bayes-sampling for multi-criteria optimization (adasamp-pareto)
+************************************************************************
 
 .. image:: https://github.com/RaoulHeese/adasamp-pareto/actions/workflows/tests.yml/badge.svg 
     :target: https://github.com/RaoulHeese/adasamp-pareto/actions/workflows/tests.yml

@@ -69,4 +69,5 @@ If you find this code useful in your research, please consider citing:
           archivePrefix={arXiv},
           primaryClass={stat.ML}
          }
-	
+
+*This project is currently not under development and is not actively maintained.*
